@@ -25,3 +25,4 @@ const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 
 export { db, auth, googleProvider };
+// firebase deploy --only hosting:calendariofinanciero
