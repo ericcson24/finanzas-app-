@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { fetchExpenses, saveExpense, deleteExpense, fetchFinancialProfile, saveFinancialProfile, saveAllExpenses } from './firebaseService'; // Import Firebase services
+import { auth, googleProvider } from './firebase';
+import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
+import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 import * as XLSX from 'xlsx';
 
@@ -85,6 +88,8 @@ const BudgetOverview = ({ budgets, expenses, currentDate, onCategoryClick }) => 
 // Componente principal de la aplicación
 const App = () => {
     // --- Estado de la Aplicación ---
+    const [user, setUser] = useState(null);
+    const [loading, setLoading] = useState(true);
     const [expenses, setExpenses] = useState({}); 
     const [financialProfile, setFinancialProfile] = useState({
         monthlySalary: 0,
@@ -101,6 +106,57 @@ const App = () => {
             'Otros': 0
         }
     });
+
+    // --- Auth & Data Loading ---
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+            setUser(currentUser);
+            if (currentUser) {
+                try {
+                    const loadedExpenses = await fetchExpenses(currentUser.uid);
+                    setExpenses(loadedExpenses);
+
+                    const loadedProfile = await fetchFinancialProfile(currentUser.uid);
+                    if (loadedProfile) {
+                        setFinancialProfile(loadedProfile);
+                    }
+                } catch (error) {
+                    console.error("Error loading data:", error);
+                }
+            } else {
+                setExpenses({});
+                setFinancialProfile({
+                    monthlySalary: 0,
+                    payday: 1,
+                    savingsTarget: 0,
+                    currency: 'EUR',
+                    initialBase: 0,
+                    budgets: { 'Comidas': 0, 'Planes': 0, 'Regalos': 0, 'Suscripciones': 0, 'Caprichos': 0, 'Otros': 0 }
+                });
+            }
+            setLoading(false);
+        });
+        return () => unsubscribe();
+    }, []);
+
+    const handleLogin = async () => {
+        try {
+            await signInWithPopup(auth, googleProvider);
+        } catch (error) {
+            console.error("Login failed:", error);
+        }
+    };
+
+    const handleLogout = async () => {
+        try {
+            await signOut(auth);
+        } catch (error) {
+            console.error("Logout failed:", error);
+        }
+    };
+
+    if (loading) return <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white">Cargando...</div>;
+    if (!user) return <LoginScreen onLogin={handleLogin} />;
     const [isConfigOpen, setIsConfigOpen] = useState(false);
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
     const [isCheckpointModalOpen, setIsCheckpointModalOpen] = useState(false);
@@ -117,22 +173,8 @@ const App = () => {
     const [editingExpenseId, setEditingExpenseId] = useState(null);
 
     // --- Inicialización desde Firebase ---
-    useEffect(() => {
-        const loadData = async () => {
-            try {
-                const loadedExpenses = await fetchExpenses();
-                setExpenses(loadedExpenses);
+    // Removed old useEffect since logic is now in Auth listener
 
-                const loadedProfile = await fetchFinancialProfile();
-                if (loadedProfile) {
-                    setFinancialProfile(loadedProfile);
-                }
-            } catch (error) {
-                console.error("Error loading data from Firebase:", error);
-            }
-        };
-        loadData();
-    }, []);
 
     // --- Lógica del Calendario y Cálculos ---
 
@@ -303,12 +345,12 @@ const App = () => {
                 type: expenseType,
                 category: expenseCategory,
                 createdAt: new Date().toISOString(), 
-                userId: 'local-user'
+                userId: user.uid
             };
-            saveExpense(expenseData);
             const dayExpenses = newExpenses[selectedDay] ? [...newExpenses[selectedDay]] : [];
             dayExpenses.push(expenseData);
             newExpenses[selectedDay] = dayExpenses;
+            saveExpense(expenseData);
         }
         
         setExpenses(newExpenses);
@@ -347,7 +389,7 @@ const App = () => {
 
     const handleSaveProfile = (newProfile) => {
         setFinancialProfile(newProfile);
-        saveFinancialProfile(newProfile);
+        saveFinancialProfile(newProfile, user.uid);
         setIsConfigOpen(false);
     };
 
@@ -434,7 +476,7 @@ const App = () => {
             type: adjustmentType,
             category: 'Otros',
             createdAt: new Date().toISOString(),
-            userId: 'local-user'
+            userId: user.uid
         };
 
         const dateKey = formatYYYYMMDD(targetDate);
@@ -484,29 +526,26 @@ const App = () => {
             <div className="w-full max-w-5xl p-6 rounded-3xl shadow-2xl border border-white/20 
                             backdrop-filter backdrop-blur-3xl bg-gray-800/60 transition duration-500">
 
-                <h1 className="text-4xl font-extrabold mb-8 text-center text-red-400 drop-shadow-lg">
-                    📅 Mi Planificador de Gastos
-                </h1>
-
-                <div className="flex justify-between items-center mb-6">
-                    <button
-                        onClick={() => setIsConfigOpen(true)}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-white font-bold shadow-lg shadow-blue-500/30 transition flex items-center gap-2"
-                    >
-                        <span>⚙️</span> Configuración
-                    </button>
-
-                    <div className="flex gap-2">
+                <div className="flex justify-between items-center mb-8">
+                    <h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600">
+                        Calendario Financiero
+                    </h1>
+                    <div className="flex gap-4 items-center">
+                        <span className="text-sm text-gray-400 hidden md:inline">Hola, {user.displayName}</span>
                         <button 
-                            onClick={handleExportData}
-                            className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded text-gray-300 transition"
+                            onClick={() => setIsConfigOpen(true)}
+                            className="p-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-gray-300 transition border border-gray-700"
+                            title="Configuración"
                         >
-                            Exportar Datos
+                            ⚙️
                         </button>
-                        <label className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded text-gray-300 transition cursor-pointer">
-                            Importar Datos
-                            <input type="file" accept=".json" onChange={handleImportData} className="hidden" />
-                        </label>
+                        <button 
+                            onClick={handleLogout}
+                            className="p-2 bg-red-900/30 hover:bg-red-900/50 text-red-400 rounded-lg transition border border-red-900/50"
+                            title="Cerrar Sesión"
+                        >
+                            🚪
+                        </button>
                     </div>
                 </div>
 
@@ -517,6 +556,8 @@ const App = () => {
                     accumulatedCushion={accumulatedCushion}
                     onOpenCheckpoint={() => setIsCheckpointModalOpen(true)}
                 />
+
+                <AnalyticsView expenses={allExpensesArray} currentDate={currentDate} />
 
                 <BudgetOverview 
                     budgets={financialProfile.budgets}
@@ -1335,6 +1376,76 @@ const CheckpointModal = ({ onClose, onSave }) => {
                         Ajustar Balance
                     </button>
                 </div>
+            </div>
+        </div>
+    );
+};
+
+const LoginScreen = ({ onLogin }) => (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-4">
+        <div className="text-center mb-8">
+            <h1 className="text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600 mb-4">
+                Finanzas App
+            </h1>
+            <p className="text-gray-400 text-lg">Tu control financiero personal en la nube.</p>
+        </div>
+        <button
+            onClick={onLogin}
+            className="flex items-center gap-3 px-8 py-4 bg-white text-gray-900 rounded-full font-bold text-lg hover:bg-gray-100 transition shadow-xl hover:shadow-2xl transform hover:-translate-y-1"
+        >
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-6 h-6" />
+            Iniciar Sesión con Google
+        </button>
+    </div>
+);
+
+const AnalyticsView = ({ expenses, currentDate }) => {
+    const currentMonthExpenses = expenses.filter(expense => {
+        const expenseDate = new Date(expense.date);
+        return expenseDate.getMonth() === currentDate.getMonth() && 
+               expenseDate.getFullYear() === currentDate.getFullYear() &&
+               expense.type === 'expense';
+    });
+
+    const data = currentMonthExpenses.reduce((acc, curr) => {
+        const cat = curr.category || 'Otros';
+        const existing = acc.find(item => item.name === cat);
+        if (existing) {
+            existing.value += curr.amount;
+        } else {
+            acc.push({ name: cat, value: curr.amount });
+        }
+        return acc;
+    }, []);
+
+    const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+
+    return (
+        <div className="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700 mb-8">
+            <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                <span>📈</span> Análisis de Gastos
+            </h3>
+            <div className="h-80 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                        <Pie
+                            data={data}
+                            cx="50%"
+                            cy="50%"
+                            labelLine={false}
+                            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                            outerRadius={80}
+                            fill="#8884d8"
+                            dataKey="value"
+                        >
+                            {data.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            ))}
+                        </Pie>
+                        <Tooltip formatter={(value) => `${value.toFixed(2)}€`} />
+                        <Legend />
+                    </PieChart>
+                </ResponsiveContainer>
             </div>
         </div>
     );

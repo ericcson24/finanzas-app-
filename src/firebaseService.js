@@ -1,12 +1,14 @@
 import { db } from './firebase';
-import { collection, getDocs, doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, deleteDoc, getDoc, query, where } from 'firebase/firestore';
 
 // --- Expenses ---
 
-// Fetch all expenses and convert to the app's dictionary format: { "YYYY-MM-DD": [ ... ] }
-export const fetchExpenses = async () => {
+// Fetch all expenses for a specific user
+export const fetchExpenses = async (userId) => {
     try {
-        const querySnapshot = await getDocs(collection(db, "expenses"));
+        if (!userId) return {};
+        const q = query(collection(db, "expenses"), where("userId", "==", userId));
+        const querySnapshot = await getDocs(q);
         const expensesMap = {};
 
         querySnapshot.forEach((doc) => {
@@ -29,6 +31,9 @@ export const fetchExpenses = async () => {
 
 export const saveExpense = async (expense) => {
     try {
+        if (!expense.userId) {
+            console.warn("Saving expense without userId");
+        }
         const expenseRef = doc(db, "expenses", expense.id);
         await setDoc(expenseRef, expense);
     } catch (error) {
@@ -58,9 +63,10 @@ export const saveAllExpenses = async (expensesMap) => {
 
 // --- Financial Profile ---
 
-export const fetchFinancialProfile = async () => {
+export const fetchFinancialProfile = async (userId) => {
     try {
-        const docRef = doc(db, "settings", "financialProfile");
+        if (!userId) return null;
+        const docRef = doc(db, "users", userId, "settings", "financialProfile");
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
@@ -74,9 +80,10 @@ export const fetchFinancialProfile = async () => {
     }
 };
 
-export const saveFinancialProfile = async (profile) => {
+export const saveFinancialProfile = async (profile, userId) => {
     try {
-        await setDoc(doc(db, "settings", "financialProfile"), profile);
+        if (!userId) return;
+        await setDoc(doc(db, "users", userId, "settings", "financialProfile"), profile);
     } catch (error) {
         console.error("Error saving profile to Firebase:", error);
         throw error;
