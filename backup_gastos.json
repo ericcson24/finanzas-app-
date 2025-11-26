@@ -1,0 +1,108 @@
+{
+  "2025-12-03": [
+    {
+      "id": "62e73495-fb1e-447b-b087-cb9a49b064db",
+      "date": "2025-12-03",
+      "amount": 16,
+      "description": "comida",
+      "createdAt": "2025-11-24T18:10:59.349Z",
+      "userId": "local-user"
+    },
+    {
+      "id": "c0646bd9-2a25-4919-b971-f2c61193aba7",
+      "date": "2025-12-03",
+      "amount": 2,
+      "description": "microsoft",
+      "createdAt": "2025-11-24T18:13:13.369Z",
+      "userId": "local-user"
+    }
+  ],
+  "2025-12-10": [
+    {
+      "id": "fe97415b-ac31-4570-b519-2cf84881d797",
+      "date": "2025-12-10",
+      "amount": 16,
+      "description": "comida",
+      "createdAt": "2025-11-24T18:11:37.257Z",
+      "userId": "local-user"
+    }
+  ],
+  "2025-12-17": [
+    {
+      "id": "42d4c486-996a-475a-b5f8-e753d2c2acd8",
+      "date": "2025-12-17",
+      "amount": 16,
+      "description": "comida",
+      "createdAt": "2025-11-24T18:11:47.433Z",
+      "userId": "local-user"
+    },
+    {
+      "id": "c47e02d1-a045-4176-ba30-fa77b7e447fa",
+      "date": "2025-12-17",
+      "amount": 10,
+      "description": "bono bus",
+      "createdAt": "2025-11-24T18:12:39.330Z",
+      "userId": "local-user"
+    }
+  ],
+  "2025-12-16": [
+    {
+      "id": "ce407077-2250-4128-bf27-9a5275d1b373",
+      "date": "2025-12-16",
+      "amount": 10,
+      "description": "icloud",
+      "createdAt": "2025-11-24T18:12:23.903Z",
+      "userId": "local-user"
+    }
+  ],
+  "2025-12-28": [
+    {
+      "id": "cb37d2ee-ec49-4de7-a964-36a4905cf283",
+      "date": "2025-12-28",
+      "amount": 30,
+      "description": "copilot",
+      "createdAt": "2025-11-24T18:12:54.327Z",
+      "userId": "local-user"
+    }
+  ],
+  "2025-12-25": [
+    {
+      "id": "777cb7ab-6fe5-4f67-b064-6f6fd9840a7b",
+      "date": "2025-12-25",
+      "amount": 2,
+      "description": "google one",
+      "createdAt": "2025-11-24T18:13:22.344Z",
+      "userId": "local-user"
+    }
+  ],
+  "2025-12-18": [
+    {
+      "id": "90769fd5-a87b-4aa8-8a75-c93f332dcbdd",
+      "date": "2025-12-18",
+      "amount": 50,
+      "description": "fiesta",
+      "createdAt": "2025-11-24T18:13:35.018Z",
+      "userId": "local-user"
+    }
+  ],
+  "2025-12-19": [
+    {
+      "id": "bd2cc887-551c-4d90-8d59-961f2ecc193c",
+      "date": "2025-12-19",
+      "amount": 30,
+      "description": "planes con laura",
+      "createdAt": "2025-11-24T18:14:15.568Z",
+      "userId": "local-user"
+    }
+  ],
+  "2025-12-26": [
+    {
+      "id": "3e73cb26-eb27-49e7-96e0-358752a60c7e",
+      "date": "2025-12-26",
+      "amount": 30,
+      "description": "planes con laura",
+      "createdAt": "2025-11-24T18:14:26.387Z",
+      "userId": "local-user"
+    }
+  ]
+}
