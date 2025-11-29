@@ -515,37 +515,109 @@ const App = () => {
     const displayMainBalance = useMemo(() => {
         if (!isFuture) return realTimeBalance;
         
-        // Disponible Estimado = Disponible Anterior (Real) + (Salario - Aportaciones) * Meses
-        // No restamos gastos aquí porque representa el "Techo de Gasto" o disponibilidad antes de vivir el mes.
+        let accumulatedLiquid = 0;
+        const today = new Date();
+        
+        // 1. Acumular el ahorro líquido de los meses pasados (1 hasta N-1)
+        // Ahorro Líquido = Salario - Aportaciones - Gastos Presupuestados
+        // Esto simula que en los meses anteriores gastaste tu presupuesto y guardaste el resto.
+        for (let i = 1; i < monthsDiff; i++) {
+            const targetDate = new Date(today.getFullYear(), today.getMonth() + i, 1);
+            const monthStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+            
+            const activeBudgets = financialProfile.monthlyBudgets?.[monthStr] || financialProfile.budgets || {};
+            const totalBudgeted = Object.values(activeBudgets).reduce((sum, val) => sum + (Number(val) || 0), 0);
+            
+            const { investments, travel, flexible } = financialProfile.pockets || {};
+            const walletContributions = (Number(investments) || 0) + (Number(travel) || 0) + (Number(flexible) || 0);
+            
+            accumulatedLiquid += ((Number(financialProfile.monthlySalary) || 0) - walletContributions - totalBudgeted);
+        }
+
+        // 2. Sumar el disponible del mes actual (N)
+        // Disponible = Salario - Aportaciones (Sin restar gastos aún, es tu techo de gasto para este mes)
         const { investments, travel, flexible } = financialProfile.pockets || {};
         const walletContributions = (Number(investments) || 0) + (Number(travel) || 0) + (Number(flexible) || 0);
-        const monthlyDisposable = (Number(financialProfile.monthlySalary) || 0) - walletContributions;
+        const currentMonthDisposable = (Number(financialProfile.monthlySalary) || 0) - walletContributions;
         
-        return realTimeBalance + (monthlyDisposable * monthsDiff);
+        return realTimeBalance + accumulatedLiquid + currentMonthDisposable;
     }, [isFuture, realTimeBalance, financialProfile, monthsDiff]);
 
     const displayColchon = useMemo(() => {
         if (!isFuture) return totalGlobalSavings;
 
-        // Colchón = Colchón Pasado + Balance * Meses
-        // Balance = Salario - Gastos Presupuestados (Las carteras se mueven dentro del colchón, no restan)
-        const totalBudgetedExpenses = Object.values(financialProfile.budgets || {}).reduce((sum, val) => sum + (Number(val) || 0), 0);
-        const monthlyBalance = (Number(financialProfile.monthlySalary) || 0) - totalBudgetedExpenses;
+        let accumulatedBalance = 0;
+        const today = new Date();
+        
+        // 1. Ajuste por el resto del mes actual (lo que falta por ganar y gastar)
+        // Esto conecta el "Real Time" con la proyección futura
+        const currentMonthStr = formatYYYYMMDD(today).substring(0, 7); // YYYY-MM
+        const currentMonthExpenses = allExpensesArray.filter(e => e.date.startsWith(currentMonthStr));
+        
+        const incomeSoFar = currentMonthExpenses
+            .filter(e => e.type === 'income')
+            .reduce((sum, e) => sum + e.amount, 0);
+            
+        const expensesSoFar = currentMonthExpenses
+            .filter(e => e.type === 'expense')
+            .reduce((sum, e) => sum + e.amount, 0);
 
-        return totalGlobalSavings + (monthlyBalance * monthsDiff);
-    }, [isFuture, totalGlobalSavings, financialProfile, monthsDiff]);
+        const monthlySalary = Number(financialProfile.monthlySalary) || 0;
+        // Usar presupuestos del mes actual
+        const activeBudgetsCurrent = financialProfile.monthlyBudgets?.[currentMonthStr] || financialProfile.budgets || {};
+        const totalBudgetedCurrent = Object.values(activeBudgetsCurrent).reduce((sum, val) => sum + (Number(val) || 0), 0);
+
+        // Lo que falta por entrar (si ya cobré todo, 0)
+        const remainingSalary = Math.max(0, monthlySalary - incomeSoFar);
+        
+        // Lo que falta por salir según presupuesto (si ya me pasé, 0)
+        const remainingBudget = Math.max(0, totalBudgetedCurrent - expensesSoFar);
+
+        accumulatedBalance += (remainingSalary - remainingBudget);
+
+        // 2. Sumar el balance específico de cada mes futuro (por si hay presupuestos personalizados)
+        for (let i = 1; i <= monthsDiff; i++) {
+            const targetDate = new Date(today.getFullYear(), today.getMonth() + i, 1);
+            const monthStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+            
+            const activeBudgets = financialProfile.monthlyBudgets?.[monthStr] || financialProfile.budgets || {};
+            const totalBudgeted = Object.values(activeBudgets).reduce((sum, val) => sum + (Number(val) || 0), 0);
+            const monthlyBalance = (Number(financialProfile.monthlySalary) || 0) - totalBudgeted;
+            
+            accumulatedBalance += monthlyBalance;
+        }
+
+        return totalGlobalSavings + accumulatedBalance;
+    }, [isFuture, totalGlobalSavings, financialProfile, monthsDiff, allExpensesArray]);
 
     const colchonBreakdown = useMemo(() => {
         if (!isFuture) return null;
         
-        const totalBudgetedExpenses = Object.values(financialProfile.budgets || {}).reduce((sum, val) => sum + (Number(val) || 0), 0);
-        const monthlyBalance = (Number(financialProfile.monthlySalary) || 0) - totalBudgetedExpenses;
+        let prevAccumulated = 0;
+        const today = new Date();
         
-        // Previous Cushion (Month N-1)
-        const prevMonths = Math.max(0, monthsDiff - 1);
-        const prevColchon = totalGlobalSavings + (monthlyBalance * prevMonths);
+        // Calcular acumulado hasta el mes anterior (N-1)
+        for (let i = 1; i < monthsDiff; i++) {
+            const targetDate = new Date(today.getFullYear(), today.getMonth() + i, 1);
+            const monthStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+            
+            const activeBudgets = financialProfile.monthlyBudgets?.[monthStr] || financialProfile.budgets || {};
+            const totalBudgeted = Object.values(activeBudgets).reduce((sum, val) => sum + (Number(val) || 0), 0);
+            const monthlyBalance = (Number(financialProfile.monthlySalary) || 0) - totalBudgeted;
+            
+            prevAccumulated += monthlyBalance;
+        }
+        
+        const prevColchon = totalGlobalSavings + prevAccumulated;
 
-        return `${prevColchon.toLocaleString('es-ES', { maximumFractionDigits: 0 })}€ + ${monthlyBalance.toLocaleString('es-ES', { maximumFractionDigits: 0 })}€`;
+        // Balance del mes actual (N)
+        const targetDate = new Date(today.getFullYear(), today.getMonth() + monthsDiff, 1);
+        const monthStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+        const activeBudgets = financialProfile.monthlyBudgets?.[monthStr] || financialProfile.budgets || {};
+        const totalBudgeted = Object.values(activeBudgets).reduce((sum, val) => sum + (Number(val) || 0), 0);
+        const currentMonthBalance = (Number(financialProfile.monthlySalary) || 0) - totalBudgeted;
+
+        return `${prevColchon.toLocaleString('es-ES', { maximumFractionDigits: 0 })}€ + ${currentMonthBalance.toLocaleString('es-ES', { maximumFractionDigits: 0 })}€`;
     }, [isFuture, totalGlobalSavings, financialProfile, monthsDiff]);
 
 
@@ -873,7 +945,7 @@ const App = () => {
     if (!user) return <LoginScreen onLogin={handleLogin} />;
 
     return (
-        <div className="min-h-screen bg-black text-white font-sans flex flex-col items-center p-4">
+        <div className="min-h-screen bg-black text-white font-sans flex flex-col items-center p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(1rem+env(safe-area-inset-top))]">
             <style jsx="true">{`
                 /* Estilo de la barra de desplazamiento para el efecto visual */
                 .glass-scroll::-webkit-scrollbar {
@@ -1152,13 +1224,13 @@ const FundModal = ({ fundName, currentBalance, onClose, onSave }) => {
                 <div className="flex p-1 bg-black rounded-lg mb-6 border border-white/10">
                     <button
                         onClick={() => setActiveTab('add')}
-                        className={`flex-1 py-2 rounded-md text-sm font-bold transition ${activeTab === 'add' ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                        className={`flex-1 py-3 rounded-md text-sm font-bold transition ${activeTab === 'add' ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300'}`}
                     >
                         Ingresar / Retirar
                     </button>
                     <button
                         onClick={() => setActiveTab('set')}
-                        className={`flex-1 py-2 rounded-md text-sm font-bold transition ${activeTab === 'set' ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                        className={`flex-1 py-3 rounded-md text-sm font-bold transition ${activeTab === 'set' ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300'}`}
                     >
                         Definir Saldo
                     </button>
@@ -1699,7 +1771,7 @@ const FinancialProfileModal = ({ profile, onSave, onClose, onImport, onExport, i
                                     max="31"
                                     value={formData.payday}
                                     onChange={handleChange}
-                                    className="w-full p-3 bg-black border border-white/20 rounded-lg focus:border-blue-500 text-white"
+                                    className="w-full p-3 bg-black border border-white/20 rounded-lg focus:border-blue-500 text-white text-base"
                                 />
                             </div>
                         </div>
@@ -1727,7 +1799,7 @@ const FinancialProfileModal = ({ profile, onSave, onClose, onImport, onExport, i
                                         name="bbva"
                                         value={formData.accounts?.bbva || 0}
                                         onChange={handleAccountChange}
-                                        className="w-full p-2 bg-black border border-white/10 rounded text-white text-right"
+                                        className="w-full p-2 bg-black border border-white/10 rounded text-white text-right text-base"
                                     />
                                 </div>
                                 <div>
@@ -1737,7 +1809,7 @@ const FinancialProfileModal = ({ profile, onSave, onClose, onImport, onExport, i
                                         name="revolut"
                                         value={formData.accounts?.revolut || 0}
                                         onChange={handleAccountChange}
-                                        className="w-full p-2 bg-black border border-white/10 rounded text-white text-right"
+                                        className="w-full p-2 bg-black border border-white/10 rounded text-white text-right text-base"
                                     />
                                 </div>
                             </div>
@@ -1759,7 +1831,7 @@ const FinancialProfileModal = ({ profile, onSave, onClose, onImport, onExport, i
                                     name="expenses"
                                                                        value={formData.pockets?.expenses || 0}
                                     onChange={handlePocketChange}
-                                    className="w-full p-2 bg-black border border-white/10 rounded text-white text-right focus:border-purple-500"
+                                    className="w-full p-2 bg-black border border-white/10 rounded text-white text-right focus:border-purple-500 text-base"
                                 />
                             </div>
                             <div>
@@ -1769,7 +1841,7 @@ const FinancialProfileModal = ({ profile, onSave, onClose, onImport, onExport, i
                                     name="subscriptions"
                                     value={formData.pockets?.subscriptions || 0}
                                     onChange={handlePocketChange}
-                                    className="w-full p-2 bg-black border border-white/10 rounded text-white text-right focus:border-purple-500"
+                                    className="w-full p-2 bg-black border border-white/10 rounded text-white text-right focus:border-purple-500 text-base"
                                 />
                             </div>
                             <div>
@@ -1779,7 +1851,7 @@ const FinancialProfileModal = ({ profile, onSave, onClose, onImport, onExport, i
                                     name="travel"
                                     value={formData.pockets?.travel || 0}
                                     onChange={handlePocketChange}
-                                    className="w-full p-2 bg-black border border-white/10 rounded text-white text-right focus:border-purple-500"
+                                    className="w-full p-2 bg-black border border-white/10 rounded text-white text-right focus:border-purple-500 text-base"
                                 />
                             </div>
                             <div>
@@ -1789,7 +1861,7 @@ const FinancialProfileModal = ({ profile, onSave, onClose, onImport, onExport, i
                                     name="flexible"
                                     value={formData.pockets?.flexible || 0}
                                     onChange={handlePocketChange}
-                                    className="w-full p-2 bg-black border border-white/10 rounded text-white text-right focus:border-purple-500"
+                                    className="w-full p-2 bg-black border border-white/10 rounded text-white text-right focus:border-purple-500 text-base"
                                 />
                             </div>
                             <div>
@@ -1799,7 +1871,7 @@ const FinancialProfileModal = ({ profile, onSave, onClose, onImport, onExport, i
                                     name="investments"
                                     value={formData.pockets?.investments || 0}
                                     onChange={handlePocketChange}
-                                    className="w-full p-2 bg-black border border-white/10 rounded text-white text-right focus:border-purple-500"
+                                    className="w-full p-2 bg-black border border-white/10 rounded text-white text-right focus:border-purple-500 text-base"
                                 />
                             </div>
                         </div>
@@ -1817,7 +1889,7 @@ const FinancialProfileModal = ({ profile, onSave, onClose, onImport, onExport, i
                                     name="investments"
                                     value={formData.fundBalances?.investments || 0}
                                     onChange={handleFundBalanceChange}
-                                    className="w-full p-2 bg-black border border-white/10 rounded text-white text-right focus:border-emerald-500"
+                                    className="w-full p-2 bg-black border border-white/10 rounded text-white text-right focus:border-emerald-500 text-base"
                                 />
                             </div>
                             <div>
@@ -1827,7 +1899,7 @@ const FinancialProfileModal = ({ profile, onSave, onClose, onImport, onExport, i
                                     name="travel"
                                     value={formData.fundBalances?.travel || 0}
                                     onChange={handleFundBalanceChange}
-                                    className="w-full p-2 bg-black border border-white/10 rounded text-white text-right focus:border-emerald-500"
+                                    className="w-full p-2 bg-black border border-white/10 rounded text-white text-right focus:border-emerald-500 text-base"
                                 />
                             </div>
                             <div>
@@ -1837,7 +1909,7 @@ const FinancialProfileModal = ({ profile, onSave, onClose, onImport, onExport, i
                                     name="flexible"
                                     value={formData.fundBalances?.flexible || 0}
                                     onChange={handleFundBalanceChange}
-                                    className="w-full p-2 bg-black border border-white/10 rounded text-white text-right focus:border-emerald-500"
+                                    className="w-full p-2 bg-black border border-white/10 rounded text-white text-right focus:border-emerald-500 text-base"
                                 />
                             </div>
                         </div>
@@ -1855,7 +1927,7 @@ const FinancialProfileModal = ({ profile, onSave, onClose, onImport, onExport, i
                                 <select 
                                     value={targetMonth}
                                     onChange={(e) => setTargetMonth(e.target.value)}
-                                    className="w-full p-2 bg-black border border-white/20 rounded text-white text-sm focus:border-green-500"
+                                    className="w-full p-2 bg-black border border-white/20 rounded text-white text-base focus:border-green-500"
                                 >
                                     {monthOptions.map(opt => (
                                         <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -1874,7 +1946,7 @@ const FinancialProfileModal = ({ profile, onSave, onClose, onImport, onExport, i
                                         name={cat}
                                         value={currentBudgets[cat] || 0}
                                         onChange={handleBudgetChange}
-                                        className="w-24 p-2 bg-black border border-white/10 rounded text-white text-right text-sm focus:border-green-500"
+                                        className="w-24 p-2 bg-black border border-white/10 rounded text-white text-right text-base focus:border-green-500"
                                     />
                                 </div>
                             ))}
@@ -1928,7 +2000,7 @@ const ExpenseSummary = ({ dateKey, expenses }) => {
     return (
         <div className="flex flex-col items-center">
             {dailyExpenses.length > 0 && (
-                <span className={`text-xs font-bold ${hasAdjustment ? 'text-yellow-400' : (total >= 0 ? 'text-green-400' : 'text-red-400')}`}>
+                <span className={`text-[10px] md:text-xs font-bold ${hasAdjustment ? 'text-yellow-400' : (total >= 0 ? 'text-green-400' : 'text-red-400')}`}>
                     {total.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
                 </span>
             )}
@@ -1953,7 +2025,7 @@ const Calendar = ({
             >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
             </button>
-            <h2 className="text-3xl font-extrabold text-white">
+            <h2 className="text-2xl md:text-3xl font-extrabold text-white">
                 {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
             </h2>
             <button 
@@ -1964,15 +2036,15 @@ const Calendar = ({
             </button>
         </div>
         
-        <div className="grid grid-cols-8 text-center font-semibold text-gray-400 text-sm">
+        <div className="grid grid-cols-7 md:grid-cols-8 text-center font-semibold text-gray-400 text-xs md:text-sm">
             {daysOfWeek.map(day => (
-                <div key={day} className="p-3 border-b border-white/10">{day}</div>
+                <div key={day} className="p-2 md:p-3 border-b border-white/10">{day}</div>
             ))}
-            <div className="p-3 border-b border-white/10 bg-white/5 text-white font-bold">TOTAL SEMANA</div>
+            <div className="hidden md:block p-3 border-b border-white/10 bg-white/5 text-white font-bold">TOTAL SEMANA</div>
         </div>
 
         {calendarWeeks.map((week, weekIndex) => (
-            <div key={weekIndex} className="grid grid-cols-8 gap-px p-1">
+            <div key={weekIndex} className="grid grid-cols-7 md:grid-cols-8 gap-px p-1">
                 {week.map((day, dayIndex) => {
                     const isToday = formatYYYYMMDD(day.date) === formatYYYYMMDD(new Date());
                     const isSelected = day.dateKey === selectedDay;
@@ -1982,7 +2054,7 @@ const Calendar = ({
                             key={dayIndex}
                             onClick={() => handleDayClick(day.dateKey)}
                             className={`
-                                p-2 h-20 flex flex-col items-center justify-start cursor-pointer transition
+                                p-1 md:p-2 h-16 md:h-20 flex flex-col items-center justify-start cursor-pointer transition
                                 backdrop-filter backdrop-blur-md bg-neutral-900 border border-white/5
                                 hover:bg-neutral-800 rounded-lg
                                 ${day.isCurrentMonth ? 'text-white' : 'text-gray-600 opacity-60'}
@@ -1990,13 +2062,13 @@ const Calendar = ({
                                 ${isSelected ? 'bg-neutral-800 border-white' : ''}
                             `}
                         >
-                            <span className="text-lg font-medium">{day.date.getDate()}</span>
+                            <span className="text-sm md:text-lg font-medium">{day.date.getDate()}</span>
                             <ExpenseSummary dateKey={day.dateKey} expenses={expenses} />
                         </div>
                     );
                 })}
 
-                <div className="flex items-center justify-center p-2 rounded-lg 
+                <div className="hidden md:flex items-center justify-center p-2 rounded-lg 
                                 backdrop-filter backdrop-blur-md bg-neutral-900 border border-white/10">
                     <span className="text-xl font-extrabold text-white">
                         {weeklyTotals[weekIndex].toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
@@ -2053,7 +2125,7 @@ const ExpenseModal = ({
                                     setExpenseCategory(CATEGORIES['expense'][0]);
                                 }
                             }}
-                            className={`flex-1 py-2 rounded-md text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2 ${
+                            className={`flex-1 py-3 rounded-md text-base font-bold transition-all duration-200 flex items-center justify-center gap-2 ${
                                 expenseType === 'expense' 
                                 ? 'bg-red-500 text-white shadow-lg shadow-red-900/50' 
                                 : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
@@ -2068,7 +2140,7 @@ const ExpenseModal = ({
                                     setExpenseCategory(CATEGORIES['income'][0]);
                                 }
                             }}
-                            className={`flex-1 py-2 rounded-md text-sm font-bold transition-all duration-200 flex items-center justify-center gap-2 ${
+                            className={`flex-1 py-3 rounded-md text-base font-bold transition-all duration-200 flex items-center justify-center gap-2 ${
                                 expenseType === 'income' 
                                 ? 'bg-green-500 text-white shadow-lg shadow-green-900/50' 
                                 : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700'
@@ -2084,12 +2156,12 @@ const ExpenseModal = ({
                             placeholder="Monto (€)"
                             value={expenseAmount}
                             onChange={(e) => setExpenseAmount(e.target.value)}
-                            className="flex-1 p-3 bg-gray-800 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:ring-red-500 focus:border-red-500"
+                            className="flex-1 p-3 bg-gray-800 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:ring-red-500 focus:border-red-500 text-base"
                         />
                         <select
                             value={expenseCategory}
                             onChange={(e) => setExpenseCategory(e.target.value)}
-                            className="flex-1 p-3 bg-gray-800 border border-white/20 rounded-lg text-white focus:ring-red-500 focus:border-red-500"
+                            className="flex-1 p-3 bg-gray-800 border border-white/20 rounded-lg text-white focus:ring-red-500 focus:border-red-500 text-base"
                         >
                             {(CATEGORIES[expenseType] || []).map(cat => (
                                 <option key={cat} value={cat}>{cat}</option>
@@ -2102,7 +2174,7 @@ const ExpenseModal = ({
                         placeholder="Descripción (opcional)"
                         value={expenseDescription}
                         onChange={(e) => setExpenseDescription(e.target.value)}
-                        className="w-full p-3 mb-4 bg-gray-800 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:ring-red-500 focus:border-red-500 resize-none"
+                        className="w-full p-3 mb-4 bg-gray-800 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:ring-red-500 focus:border-red-500 resize-none text-base"
                     />
                     <div className="flex gap-2">
                         {editingExpenseId && (
@@ -2139,14 +2211,14 @@ const ExpenseModal = ({
                                         </span>
                                         <button
                                             onClick={() => handleEditClick(exp)}
-                                            className="text-gray-400 hover:text-blue-400 transition mr-2"
+                                            className="text-gray-400 hover:text-blue-400 transition mr-2 p-2"
                                             title="Editar"
                                         >
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
                                         </button>
                                         <button
                                             onClick={() => handleDeleteExpense(exp.id)}
-                                            className="text-gray-400 hover:text-red-500 transition"
+                                            className="text-gray-400 hover:text-red-500 transition p-2"
                                             title="Eliminar"
                                         >
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
@@ -2304,7 +2376,7 @@ const CheckpointModal = ({ onClose, onSave, currentAccounts }) => {
                             type="date"
                             value={date}
                             onChange={(e) => setDate(e.target.value)}
-                            className="w-full p-3 bg-black border border-white/20 rounded-xl focus:border-purple-500 text-white"
+                            className="w-full p-3 bg-black border border-white/20 rounded-xl focus:border-purple-500 text-white text-base"
                         />
                     </div>
 
@@ -2319,7 +2391,7 @@ const CheckpointModal = ({ onClose, onSave, currentAccounts }) => {
                                 step="0.01"
                                 value={accounts.bbva}
                                 onChange={handleAccountChange}
-                                className="w-32 bg-transparent text-right font-mono text-white focus:outline-none border-b border-white/20 focus:border-blue-500"
+                                className="w-32 bg-transparent text-right font-mono text-white focus:outline-none border-b border-white/20 focus:border-blue-500 text-base"
                             />
                         </div>
 
@@ -2331,7 +2403,7 @@ const CheckpointModal = ({ onClose, onSave, currentAccounts }) => {
                                 step="0.01"
                                 value={accounts.revolut}
                                 onChange={handleAccountChange}
-                                className="w-32 bg-transparent text-right font-mono text-white focus:outline-none border-b border-white/20 focus:border-pink-500"
+                                className="w-32 bg-transparent text-right font-mono text-white focus:outline-none border-b border-white/20 focus:border-pink-500 text-base"
                             />
                         </div>
 
@@ -2343,7 +2415,7 @@ const CheckpointModal = ({ onClose, onSave, currentAccounts }) => {
                                 step="0.01"
                                 value={accounts.cash}
                                 onChange={handleAccountChange}
-                                className="w-32 bg-transparent text-right font-mono text-white focus:outline-none border-b border-white/20 focus:border-green-500"
+                                className="w-32 bg-transparent text-right font-mono text-white focus:outline-none border-b border-white/20 focus:border-green-500 text-base"
                             />
                         </div>
                     </div>
@@ -2374,8 +2446,8 @@ const LoginScreen = ({ onLogin }) => (
             <p className="text-gray-400 text-lg">Tu control financiero personal en la nube.</p>
         </div>
         <button
-            onclick={onLogin}
-            className="flex items-center gap-3 px-8 py-4 bg-white text-gray-900 rounded-full font-bold text-lg hover:bg-gray-100 transition shadow-xl hover:shadow-2xl transform hover:-translate-y-1"
+            onClick={onLogin}
+            className="flex items-center gap-3 px-8 py-4 bg-white text-gray-900 rounded-full font-bold text-lg hover:bg-gray-100 transition shadow-xl hover:shadow-2xl transform hover:-translate-y-1 active:scale-95"
         >
             <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-6 h-6" />
             Iniciar Sesión con Google
